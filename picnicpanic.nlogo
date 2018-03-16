@@ -1,40 +1,35 @@
-; Chloe and Anna
+; Chloe Johnson and Anna Novak
 ; Professor Dickerson
 ; CSCI 0390
 ; April 4, 2018
 
 globals [
-  player
-  player-size
-  fruit-list
-  fruit-size
-  fruit-frequency
-  max-fruit-speed
-  score
-  level
-  lives
-  level-goal
-  level-goal-decrement
-  rot-time
-  ant-speed
-  fruity-ants
+  player                  ; Reference to the user's basket
+  player-size             ; The size of the player's basket
+  fruit-list              ; A list of strings that relate to possible fruit shapes
+  fruit-size              ; The size of a piece of fruit
+  fruit-frequency         ; Determines approximately how frequently a piece of fruit will randomly appear
+  max-fruit-speed         ; The maximum speed a piece of fruit can fall
+  score                   ; The player's score (increases when the player catches fruit
+                          ; and decreases when an ant steals fruit from the basket)
+  level                   ; The level that a player is on (the game becomes more difficult as the level goes up)
+  lives                   ; The number of lives a player has until it is game over
+  level-goal              ; The number of fruit pieces a player must catch to move on to a new level
+  level-goal-decrement    ; The number of fruit pieces remaining to be caught in the current level
+  ant-speed               ; The speed at which an ant move
+  fruity-ants             ; A list of strings that relate to possible shapes for ants carrying pieces of fruit
 ]
 
 breed [ baskets basket ]
 breed [ fruits fruit ]
 breed [ ants ant ]
 breed [ junk-foods junk-food ]
+; breed [ juice-boxes juice-box ]
 
 fruits-own [ fruit-type speed ]
+junk-foods-own [ speed ]
 baskets-own [ bottom-left bottom-right ]
 
-
-; To get to next round, you must catch x-number of fruit
-; Ants will appear and try to eat your fruit
-; If they eat the fruit, the number of fruit you have to eat increases by 1
-; You can squash the ants by jumping on them
-; Don't catch the falling junk food
-; Get bonus points if you catch the same kind of fruit in a row
 
 ; Setup procedure
 to setup
@@ -42,63 +37,61 @@ to setup
   reset-ticks
   setup-patches
   init-variables
+  start-new-level
+  ask fruits [ set hidden? true ]
 end
 
-; Make the background a field
+
+; Make the world a field
 to setup-patches
   import-pcolors "field.jpg"
 end
 
+
 ; Initialize variables
 to init-variables
   set player-size 100
-  create-baskets 1 [ ; create the player
+  ; create the player
+  create-baskets 1 [
     set color black
     set heading 0
     set size player-size
     set shape "basket"
     set xcor 0
     set ycor min-pycor + player-size / 2
-    set bottom-left patch (xcor - (player-size / 2) + 25) (ycor - (player-size / 2) + 25)
-    set bottom-right patch (xcor + (player-size / 2) + 25) (ycor - (player-size / 2) + 25)
+    set-corners
     set player self
   ]
   set fruit-list (list "apple" "banana" "grapes")
   set fruit-size 35
-  set fruit-frequency 250000 ; 500000
-  set max-fruit-speed 0.001 ; 0.0005
+  set fruit-frequency 100000 ; 500000
+  set max-fruit-speed 0.01 ; 0.0005
   set score 0
-  set level 1
+  set level 0
   set lives 3
-  set level-goal 10
-  set level-goal-decrement 10
-  set rot-time 100000 ; 1000000
-  set ant-speed 0.0001
+  set level-goal 0
+  set level-goal-decrement 0
+  set ant-speed 0.0005
   set fruity-ants (list "apple-ant") ; "banana-ant" "grapes-ant"
 end
 
 
-; play the player to the left
+; Initializes a new level
+; Each level becomes increasingly more difficult
 ; Observer context
-to move-left
-  ask player [
-    set xcor xcor - 10
-    set bottom-left patch (xcor - (player-size / 2) + 15) (ycor - (player-size / 2) + 25)
-    set bottom-right patch (xcor + (player-size / 2) + 15) (ycor - (player-size / 2) + 25)
-  ]
+to start-new-level
+  ask fruits [die]
+  ask ants [die]
+  set fruit-frequency 500000 - (1000 * level * level)
+  set level level + 1
+  set level-goal level-goal + 10
+  set level-goal-decrement level-goal
+  make-fruit
 end
 
 
-; play the player to the right
+; Create a new, randomly-shaped, randomly-fast falling piece of fruit
 ; Observer context
-to move-right
-  ask player [
-    set xcor xcor + 10
-    set bottom-left patch (xcor - (player-size / 2) + 15) (ycor - (player-size / 2) + 25)
-    set bottom-right patch (xcor + (player-size / 2) + 15) (ycor - (player-size / 2) + 25)
-  ]
-end
-
 to make-fruit
   create-fruits 1 [
     set fruit-type one-of fruit-list
@@ -108,12 +101,59 @@ to make-fruit
     set shape fruit-type
     set heading 0
     set speed random-float max-fruit-speed
+    color-fruit
   ]
 end
 
+
+; Color the piece of fruit according to the type of fruit
+; Fruit context
+to color-fruit
+  if shape = "apple" [
+    set color red
+  ]
+  if shape = "banana" [
+    set color yellow
+  ]
+  if shape = "grapes" [
+    set color violet
+  ]
+end
+
+
+; Move the player to the left
+; Observer context
+to move-left
+  ask player [
+    set xcor xcor - 10
+    set-corners
+  ]
+end
+
+
+; Move the player to the right
+; Observer context
+to move-right
+  ask player [
+    set xcor xcor + 10
+    set-corners
+  ]
+end
+
+
+; Reassigns the bottom corners of the basket when a player moves (or is initialized)
+; Basket context
+to set-corners
+  set bottom-left patch (xcor - (player-size / 2) + 25) (ycor - (player-size / 2) + 25)
+  set bottom-right patch (xcor + (player-size / 2) - 20) (ycor - (player-size / 2) + 25)
+end
+
+
+; Plays the game by making all of the agents move accordingly at each tick
 ; Forever button
 ; Observer context
 to play
+  ask fruits [ set hidden? false ]
   let random-value random fruit-frequency
   if random-value = 0 [ make-fruit ]
   catch-fruit
@@ -131,6 +171,33 @@ to play
 end
 
 
+; If there is a fruit just above the basket, then catch it (kill the fruit agent) and increment the score
+; Observer context
+to catch-fruit
+  ask player [
+    let catching-fruits fruits with [
+      distance player < (player-size - 2) / 2
+      and ycor > [ycor] of player
+    ]
+    if any? catching-fruits [
+      set level-goal-decrement level-goal-decrement - count catching-fruits
+      set score score + (10 * count catching-fruits) ; determine-score catching-fruits
+      ask player [ set color [color] of one-of catching-fruits ]
+      ask catching-fruits [die]
+    ]
+  ]
+end
+
+
+; Player context
+;to determine-score [ catching-fruits ]
+;  set score score + (10 * count catching-fruits)
+;end
+
+
+; If the fruit hasn't hit the ground, then keep falling
+; Otherwise, spawn an ant
+; Observer context
 to fruit-fall
   ask fruits [
     ifelse ycor - (fruit-size / 2) > min-pycor [
@@ -141,6 +208,9 @@ to fruit-fall
   ]
 end
 
+
+; Spawn an ant at the site of a fallen fruit
+; Observer context
 to make-ant
   hatch-ants 1 [
     set shape "bug"
@@ -151,23 +221,18 @@ to make-ant
 end
 
 
-to catch-fruit
-  ask player [
-    let catching-fruits fruits with [
-      distance player < (player-size - 2) / 2
-      and ycor > [ycor] of player
-    ]
-    if any? catching-fruits [
-      set level-goal-decrement level-goal-decrement - count catching-fruits
-      determine-score catching-fruits
-      ask player [ set color [color] of one-of catching-fruits ]
-      ask catching-fruits [die]
+; Stomp on an ant by clicking on it
+; Observer context
+to stomp
+  if mouse-down? [
+    ask ants [ if distance patch mouse-xcor mouse-ycor < 10 and shape = "bug" [ die ]
     ]
   ]
 end
 
 
-; ant context
+; The ant eats the piece of fruit it is currently on (thus killing the fruit)
+; Ant context
 to eat-fruit
   let fruits-here fruits-on patch-here
   if any? fruits-here [
@@ -177,20 +242,24 @@ to eat-fruit
   ]
 end
 
-; ant context
+
+; If the ant is not on a piece of fruit, not at the basket, and has not yet stolen fruit, then move toward the basket
+; Ant context
 to move-to-basket
   let fruits-here fruits-on patch-here
-  let baskets-here baskets-on patch-here
-  if not any? fruits-here and not any? baskets-here and shape != one-of fruity-ants [
+  if not any? fruits-here
+  and patch-here != [bottom-left] of player
+  and patch-here != [bottom-right] of player
+  and shape != one-of fruity-ants [
     face closer-of
     fd ant-speed
   ]
 end
 
-; ant context
+
+; If the ant is at the basket, steal a piece of fruit (i.e. make the level goal 1 piece of fruit greater), and decrement the score
+; Ant context
 to steal-fruit
-  ;let baskets-here baskets-on patch-here
-  ;if any? baskets-here [
   if patch-here = [bottom-left] of player or patch-here = [bottom-right] of player [
     if shape != one-of fruity-ants [
       set score score - 25
@@ -201,7 +270,9 @@ to steal-fruit
   ]
 end
 
-; ant context
+
+; If the ant has already stolen a piece of fruit, then it heads toward the side of the world
+; Ant context
 to leave-basket
   if shape = one-of fruity-ants [
     face patch max-pxcor ycor
@@ -209,24 +280,27 @@ to leave-basket
   ]
 end
 
-;ant context
+
+; If the ant has already stolen a piece of fruit and is at the side of the world, then it dies
+; Ant context
 to go-home
   if shape = one-of fruity-ants and patch-here = patch max-pxcor ycor [
     die
   ]
 end
 
-; ant context
+
+; Determines if the bottom left corner of the basket or the bottom right corner of the basket is closer to the ant
+; Ant context
 to-report closer-of
   let dist [bottom-left] of player
   if distance [bottom-right] of player < distance dist [ set dist [bottom-right] of player ]
   report dist
 end
 
-to determine-score [ catching-fruits ]
-  set score score + (10 * count catching-fruits)
-end
 
+; Reports true if it's time to initiate a new level and false otherwise
+; Observer context
 to-report new-level?
   let nl false
   if level-goal-decrement < 1 [
@@ -235,24 +309,6 @@ to-report new-level?
   report nl
 end
 
-to start-new-level
-  ask fruits [die]
-  ask ants [die]
-  set fruit-frequency 500000 - (1000 * level * level)
-  set score score + 100
-  set level level + 1
-  set level-goal level-goal + 10
-  set level-goal-decrement level-goal
-end
-
-
-; observer context
-to stomp
-  if mouse-down? [
-    ask ants [ if distance patch mouse-xcor mouse-ycor < 10 [ die ]
-    ]
-  ]
-end
 @#$#@#$#@
 GRAPHICS-WINDOW
 210
@@ -394,41 +450,21 @@ lives
 11
 
 @#$#@#$#@
-## WHAT IS IT?
+Chloe Johnson and Anna Novak
+Professor Dickerson
+CSCI 0390
+April 4, 2018
 
-(a general understanding of what the model is trying to show or explain)
+## PICNIC PANIC
 
-## HOW IT WORKS
+Welcome to Picnic Panic!
 
-(what rules the agents use to create the overall behavior of the model)
-
-## HOW TO USE IT
-
-(how to use the model, including a description of each of the items in the Interface tab)
-
-## THINGS TO NOTICE
-
-(suggested things for the user to notice while running the model)
-
-## THINGS TO TRY
-
-(suggested things for the user to try to do (move sliders, switches, etc.) with the model)
-
-## EXTENDING THE MODEL
-
-(suggested things to add or change in the Code tab to make the model more complicated, detailed, accurate, etc.)
-
-## NETLOGO FEATURES
-
-(interesting or unusual features of NetLogo that the model uses, particularly in the Code tab; or where workarounds were needed for missing features)
-
-## RELATED MODELS
-
-(models in the NetLogo Models Library and elsewhere which are of related interest)
-
-## CREDITS AND REFERENCES
-
-(a reference to the model's URL on the web if it has one, as well as any other necessary credits, citations, and links)
+; To get to next round, you must catch x-number of fruit
+; Ants will appear and try to eat your fruit
+; If they eat the fruit, the number of fruit you have to eat increases by 1
+; You can squash the ants by jumping on them
+; Don't catch the falling junk food
+; Get bonus points if you catch the same kind of fruit in a row
 @#$#@#$#@
 default
 true
