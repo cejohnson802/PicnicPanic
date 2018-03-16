@@ -12,7 +12,9 @@ globals [
   junk-food-size          ; The size of a piece of junk food
   fruit-frequency         ; Determines approximately how frequently a piece of fruit will randomly appear
   junk-food-frequency     ; Determines approximately how frequently a piece of junk food will randomly appear
+  min-fruit-speed         ; The minimum speed a piece of fruit can fall
   max-fruit-speed         ; The maximum speed a piece of fruit can fall
+  min-junk-food-speed     ; The minimum speed a piece of junk food can fall
   max-junk-food-speed     ; The maximum speed a piece of junk food can fall
   score                   ; The player's score (increases when the player catches fruit
                           ; and decreases when an ant steals fruit from the basket)
@@ -22,17 +24,22 @@ globals [
   level-goal-decrement    ; The number of fruit pieces remaining to be caught in the current level
   ant-speed               ; The speed at which an ant move
   fruity-ants             ; A list of strings that relate to possible shapes for ants carrying pieces of fruit
+  juice-time              ; The number of a ticks a juice box will be alive for
+  juice-frequency         ; Determines approximately how frequently a juice box will randomly appear
+  juice-box-size          ; The size of a piece of juice box
+  rot-time                ; The number of a ticks a piece of fruit on the ground will rot for
 ]
 
 breed [ baskets basket ]
 breed [ fruits fruit ]
 breed [ ants ant ]
 breed [ junk-foods junk-food ]
-; breed [ juice-boxes juice-box ]
+breed [ juice-boxes juice-box ]
 
-fruits-own [ fruit-type speed ]
+fruits-own [ fruit-type speed time ]
 junk-foods-own [ junk-food-type speed ]
 baskets-own [ bottom-left bottom-right ]
+juice-boxes-own [ time ]
 
 
 ; Setup procedure
@@ -70,9 +77,11 @@ to init-variables
   set junk-food-list (list "chips" "cupcake" "ice-cream")
   set fruit-size 35
   set junk-food-size 35
-  set fruit-frequency 250000
+  set fruit-frequency 200000
   set junk-food-frequency fruit-frequency * 2 ; 500000
+  set min-fruit-speed 0.001
   set max-fruit-speed 0.01 ; 0.0005
+  set min-junk-food-speed 0.001
   set max-junk-food-speed 0.01 ; 0.0005
   set score 0
   set level 0
@@ -81,6 +90,10 @@ to init-variables
   set level-goal-decrement 0
   set ant-speed 0.0005
   set fruity-ants (list "apple-ant") ; "banana-ant" "grapes-ant"
+  set juice-time 50000
+  set juice-frequency fruit-frequency * 50
+  set juice-box-size 45
+  set rot-time 25000
 end
 
 
@@ -90,11 +103,14 @@ end
 to start-new-level
   ask fruits [die]
   ask ants [die]
-  set fruit-frequency 250000 - (1000 * level * level)
+  set fruit-frequency 200000 - (1000 * level * level)
   set junk-food-frequency fruit-frequency * 2
+  set juice-frequency fruit-frequency * 50
   set level level + 1
-  set level-goal level-goal + 10
+  set level-goal level-goal + 5
   set level-goal-decrement level-goal
+  output-type "Level " output-type level output-print ""
+  wait 1
   make-fruit
 end
 
@@ -109,7 +125,10 @@ to make-fruit
     set size fruit-size
     set shape fruit-type
     set heading 0
-    set speed random-float max-fruit-speed
+    while [speed < min-fruit-speed or speed > max-fruit-speed] [
+      set speed random-float max-fruit-speed
+    ]
+    set time rot-time
     color-fruit
   ]
 end
@@ -164,14 +183,13 @@ end
 to play
   ifelse alive? [
     ask fruits [ set hidden? false ]
-    let random-fruit random fruit-frequency
-    if random-fruit = 0 [ make-fruit ]
-    let random-junk-food random junk-food-frequency
-    if random-junk-food = 0 [ make-junk-food ]
+    make-agents-randomly
     catch-fruit
     catch-junk-food
     food-fall
     stomp
+    drink
+    reduce-juice-box-life
     ask ants [
       eat-fruit
       move-to-basket
@@ -188,11 +206,26 @@ to play
 end
 
 
+; Randomly create pieces of fruit, junk food, and juice boxes
+; Observer context
+to make-agents-randomly
+  let random-fruit random fruit-frequency
+  if random-fruit = 0 [ make-fruit ]
+  let random-junk-food random junk-food-frequency
+  if random-junk-food = 0 [ make-junk-food ]
+  let random-juice random juice-frequency
+  if random-juice = 0 [ make-juice-box ]
+end
+
+
+; Reports true if the player is still alive and false otherwise
+; Observer context
 to-report alive?
   let status true
   if lives < 1 [ set status false ]
   report status
 end
+
 
 ; Create a new, randomly-shaped, randomly-fast falling piece of junk-food
 ; Observer context
@@ -204,10 +237,35 @@ to make-junk-food
     set size junk-food-size
     set shape junk-food-type
     set heading 0
-    set speed random-float max-junk-food-speed
+    while [speed < min-junk-food-speed or speed > max-junk-food-speed] [
+      set speed random-float max-junk-food-speed
+    ]
   ]
 end
 
+
+; Create a new, randomly placed juice box
+; Observer context
+to make-juice-box
+  create-juice-boxes 1 [
+    set xcor random max-pxcor
+    set ycor random max-pycor
+    set size juice-box-size
+    set heading 0
+    set shape "juice-box"
+    set time juice-time
+  ]
+end
+
+
+; Reduce the life of a juice box until it gets to 0 and then ask the juice-box to die
+; Observer context
+to reduce-juice-box-life
+  ask juice-boxes [
+    set time time - 1
+    if time < 0 [ die ]
+  ]
+end
 
 ; If there is a fruit just above the basket, then catch it (kill the fruit agent) and increment the score
 ; Observer context
@@ -242,20 +300,17 @@ to catch-junk-food
   ]
 end
 
-; Player context
-;to determine-score [ catching-fruits ]
-;  set score score + (10 * count catching-fruits)
-;end
 
-
-; If the fruit hasn't hit the ground, then keep falling, otherwise spawn an ant
+; If the fruit hasn't hit the ground, then keep falling, otherwise spawn an ant (if there isn't already an ant there)
 ; If the junk food hasn't hit the ground, then keep falling, otherwise die
 ; Observer context
 to food-fall
   ask fruits [
-    ifelse ycor - (fruit-size / 2) > min-pycor [
+    let ants-here ants-on patch-here
+    if ycor - (fruit-size / 2) > min-pycor [
       set ycor ycor - speed
-    ][
+    ]
+    if ycor - (fruit-size / 2) <= min-pycor and not any? ants-here [
       make-ant
     ]
   ]
@@ -285,11 +340,25 @@ end
 ; Observer context
 to stomp
   if mouse-down? [
-    ask ants [ if distance patch mouse-xcor mouse-ycor < 10 and shape = "bug" [ die ]
+    ask ants [
+      if distance patch mouse-xcor mouse-ycor < 10 and shape = "bug" [ die ]
     ]
   ]
 end
 
+
+; Drink a juice box by clicking on it
+; Observer context
+to drink
+  if mouse-down? [
+    ask juice-boxes [
+      if distance patch mouse-xcor mouse-ycor < juice-box-size / 2 [
+        set lives lives + 1
+        die
+      ]
+    ]
+  ]
+end
 
 ; The ant eats the piece of fruit it is currently on (thus killing the fruit)
 ; Ant context
@@ -297,7 +366,11 @@ to eat-fruit
   let fruits-here fruits-on patch-here
   if any? fruits-here [
     ask fruits-here [
-      die
+      let ants-here ants-on patch-here
+      if any? ants-here [
+        set time time - 1
+        if time < 0 [ die ]
+      ]
     ]
   ]
 end
@@ -414,9 +487,9 @@ NIL
 1
 
 BUTTON
-431
+378
 497
-494
+441
 530
 left
 move-left
@@ -431,9 +504,9 @@ NIL
 1
 
 BUTTON
-509
+456
 496
-572
+519
 529
 right
 move-right
@@ -507,6 +580,13 @@ lives
 17
 1
 11
+
+OUTPUT
+683
+65
+930
+119
+13
 
 @#$#@#$#@
 Chloe Johnson and Anna Novak
@@ -790,6 +870,48 @@ true
 15
 Polygon -6459832 true false 90 135 105 270 195 270 210 135 90 135
 Polygon -1 true true 90 135 75 120 60 75 60 60 75 30 105 15 150 15 195 15 225 30 240 60 240 75 225 120 210 135 90 135
+
+juice-box
+true
+1
+Polygon -2674135 true true 240 270 240 90 195 60 45 60 75 90 75 270 240 270
+Polygon -2674135 true true 45 60 45 240 75 270 75 90 45 60
+Polygon -1 true false 120 15 150 15 150 75 120 75 120 15
+Line -16777216 false 75 90 75 90
+Line -16777216 false 75 90 45 60
+Line -16777216 false 75 90 75 270
+Line -16777216 false 75 90 240 90
+Line -16777216 false 240 90 240 270
+Line -16777216 false 75 270 240 270
+Line -16777216 false 45 60 45 240
+Line -16777216 false 45 240 75 270
+Line -16777216 false 45 60 120 60
+Line -16777216 false 150 60 195 60
+Line -16777216 false 195 60 240 90
+Line -1 false 120 15 120 75
+Line -1 false 120 75 150 75
+Line -1 false 150 75 150 15
+Line -1 false 120 15 150 15
+Line -16777216 false 105 135 105 180
+Line -16777216 false 105 180 90 180
+Line -16777216 false 90 135 120 135
+Line -16777216 false 90 165 90 180
+Line -16777216 false 120 150 120 180
+Line -16777216 false 120 180 135 180
+Line -16777216 false 135 150 135 180
+Line -16777216 false 150 150 150 180
+Line -16777216 false 180 150 165 150
+Line -16777216 false 165 150 165 180
+Line -16777216 false 165 180 180 180
+Line -16777216 false 195 165 195 180
+Line -16777216 false 195 180 210 180
+Line -16777216 false 195 165 210 165
+Line -16777216 false 195 165 195 150
+Line -16777216 false 195 150 210 150
+Line -16777216 false 210 165 210 150
+Line -16777216 false 225 135 225 165
+Rectangle -16777216 true false 225 180 225 180
+Rectangle -16777216 true false 150 135 150 135
 
 leaf
 false
