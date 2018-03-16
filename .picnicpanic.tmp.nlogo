@@ -70,7 +70,7 @@ to init-variables
   set junk-food-list (list "chips" "cupcake" "ice-cream")
   set fruit-size 35
   set junk-food-size 35
-  set fruit-frequency 250000
+  set fruit-frequency 50000
   set junk-food-frequency fruit-frequency * 2 ; 500000
   set max-fruit-speed 0.01 ; 0.0005
   set max-junk-food-speed 0.01 ; 0.0005
@@ -90,7 +90,7 @@ end
 to start-new-level
   ask fruits [die]
   ask ants [die]
-  set fruit-frequency 250000 - (1000 * level * level)
+  set fruit-frequency  - (1000 * level * level)
   set junk-food-frequency fruit-frequency * 2
   set level level + 1
   set level-goal level-goal + 10
